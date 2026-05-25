@@ -1,10 +1,10 @@
-import { GoogleGenAI } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
 // Initialize the Google Gemini API client
-const genAI = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || ''
-});
+const genAI = new GoogleGenerativeAI(
+  process.env.GEMINI_API_KEY || ''
+);
 
 export async function POST(request) {
   try {
