@@ -21,9 +21,9 @@ export async function POST(request) {
       body: JSON.stringify({ status: 'thinking', text: 'JARVIS IS THINKING...' })
     }).catch(() => {});
 
-    // 2. Query Google Gemini AI (Free Model gemini-1.5-flash)
+    // 2. Query Google Gemini AI (Free Model gemini-2.5-flash)
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       systemInstruction: 'You are JARVIS, a highly advanced, supportive cyberdeck AI assistant. Speak concisely, with a professional, slightly British cyberpunk persona. Keep responses under 3 sentences.'
     });
 
