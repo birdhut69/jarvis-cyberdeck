@@ -89,81 +89,42 @@ export default function JarvisDashboard() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SR) {
         const rec = new SR();
-        rec.continuous = true;
+        rec.continuous = false;
         rec.interimResults = false;
         rec.lang = 'en-US';
 
         rec.onstart = () => {
+          setIsListening(true);
           setWakeWordActive(true);
+          updateServerStatus('thinking', 'LISTENING...');
         };
 
         rec.onresult = (event) => {
-          // Get the latest final result
-          const last = event.results[event.results.length - 1];
-          if (!last.isFinal) return;
-          const text = last[0].transcript.trim().toLowerCase();
-
-          // Skip if already processing a command
-          if (isProcessingRef.current) return;
-
-          // Check for wake word
-          const hasWake = text.includes('jarvis') || text.includes('jarwis') || text.includes('jarves');
-
-          if (hasWake) {
-            // Strip wake word to get the command
-            let command = text
-              .replace(/hey\s*jarvis/gi, '')
-              .replace(/jarvis/gi, '')
-              .replace(/jarwis/gi, '')
-              .replace(/jarves/gi, '')
-              .trim();
-
-            if (command.length > 2) {
-              // Wake word + command in one sentence: "Hey Jarvis play some music"
-              playSoundEffect('listening');
-              isProcessingRef.current = true;
-              setIsListening(true);
-              setTranscript(command);
-              handleSendToGemini(command);
-            } else {
-              // Just "Hey Jarvis" — acknowledge and wait for next utterance
-              playSoundEffect('listening');
-              wakeDetectedRef.current = true;
-              setIsListening(true);
-              setJarvisResponse('Yes Sir, I am listening...');
-              updateServerStatus('thinking', 'AWAITING COMMAND...');
-            }
-          } else if (wakeDetectedRef.current) {
-            // This is the follow-up command after "Hey Jarvis"
-            wakeDetectedRef.current = false;
-            isProcessingRef.current = true;
+          const text = event.results[0][0].transcript.trim();
+          if (text.length > 0) {
             setTranscript(text);
-            handleSendToGemini(text);
+            // Strip wake word if present
+            let command = text
+              .replace(/hey\s*jarvis\s*/gi, '')
+              .replace(/jarvis\s*/gi, '')
+              .trim();
+            if (command.length < 2) command = text;
+            handleSendToGemini(command);
           }
-          // If no wake word and not in wake mode, ignore (passive)
         };
 
-        rec.onerror = (e) => {
-          if (e.error !== 'no-speech' && e.error !== 'aborted') {
-            console.warn('Speech error:', e.error);
-          }
+        rec.onerror = () => {
+          setIsListening(false);
+          setWakeWordActive(false);
+          updateServerStatus('idle', 'TAP MIC TO SPEAK');
         };
 
         rec.onend = () => {
+          setIsListening(false);
           setWakeWordActive(false);
-          // Always restart unless we're processing
-          setTimeout(() => {
-            if (!isProcessingRef.current) {
-              try { rec.start(); } catch(e) {}
-            }
-          }, 300);
         };
 
         recognitionRef.current = rec;
-        // Start listening after a short delay
-        setTimeout(() => {
-          try { rec.start(); } catch(e) {}
-        }, 1500);
       }
       synthRef.current = window.speechSynthesis;
       synthRef.current.getVoices();
@@ -353,16 +314,11 @@ export default function JarvisDashboard() {
 
   const startListening = () => {
     playSoundEffect('listening');
-    if (synthRef.current && synthRef.current.speaking) {
-      synthRef.current.cancel();
-    }
-    // For manual button press: set wake detected so next utterance becomes command
-    wakeDetectedRef.current = true;
-    setIsListening(true);
-    setJarvisResponse('Yes Sir, I am listening...');
-    updateServerStatus('thinking', 'AWAITING COMMAND...');
-    // Make sure recognition is running
-    try { recognitionRef.current?.start(); } catch(e) {}
+    if (synthRef.current?.speaking) synthRef.current.cancel();
+    try { recognitionRef.current?.stop(); } catch(e) {}
+    setTimeout(() => {
+      try { recognitionRef.current?.start(); } catch(e) {}
+    }, 100);
   };
 
   // ── Action Dispatcher ─────────────────────────────────────────
@@ -373,9 +329,7 @@ export default function JarvisDashboard() {
     switch (action) {
       case 'play_music':
         if (data?.query) {
-          const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(data.query)}`;
           setMusicQuery(data.query);
-          window.open(url, '_blank');
           playSoundEffect('success');
         }
         break;
@@ -765,7 +719,7 @@ export default function JarvisDashboard() {
             color: isListening ? '#f81fff' : '#00f5ff',
             textShadow: isListening ? '0 0 8px rgba(248, 31, 255, 0.5)' : '0 0 8px rgba(0, 245, 255, 0.5)'
           }}>
-            {isListening ? '🎤 LISTENING FOR COMMAND...' : wakeWordActive ? '🟢 SAY "HEY JARVIS" TO ACTIVATE' : 'TAP CORE OR SAY "HEY JARVIS"'}
+            {isListening ? '🎤 LISTENING...' : '🔵 TAP TO SPEAK'}
           </span>
         </div>
 
@@ -912,27 +866,25 @@ export default function JarvisDashboard() {
             border: '1px solid rgba(248, 31, 255, 0.35)',
             borderRadius: '14px',
             padding: '15px',
-            marginTop: '20px',
-            display: 'flex', alignItems: 'center', gap: '15px'
+            marginTop: '20px'
           }}>
-            <div style={{
-              width: '42px', height: '42px', borderRadius: '10px',
-              background: 'linear-gradient(135deg, #f81fff, #00f5ff)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '20px', flexShrink: 0
-            }}>♪</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>NOW PLAYING</div>
-              <div style={{ fontSize: '15px', color: '#f81fff', fontWeight: 'bold' }}>{musicQuery}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '12px', color: '#f81fff', fontWeight: 'bold' }}>
+                ♪ {musicQuery.toUpperCase()}
+              </span>
+              <button onClick={() => setMusicQuery(null)} style={{
+                background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px',
+                color: '#fff', padding: '4px 10px', fontSize: '11px', cursor: 'pointer'
+              }}>✕ CLOSE</button>
             </div>
-            <button onClick={() => window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(musicQuery)}`, '_blank')} style={{
-              background: 'rgba(248,31,255,0.2)', border: '1px solid #f81fff', borderRadius: '8px',
-              color: '#f81fff', padding: '6px 12px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold'
-            }}>▶ OPEN</button>
-            <button onClick={() => setMusicQuery(null)} style={{
-              background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px',
-              color: '#fff', padding: '6px 8px', fontSize: '10px', cursor: 'pointer'
-            }}>✕</button>
+            <iframe
+              width="100%" height="152"
+              src={`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(musicQuery)}&autoplay=1`}
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              style={{ border: 'none', borderRadius: '10px', background: '#000' }}
+              title="JARVIS Music Player"
+            />
           </div>
         )}
 
