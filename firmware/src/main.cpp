@@ -339,10 +339,19 @@ void pollGatewayStatus() {
   HTTPClient http;
   String url = String("https://") + GATEWAY_HOST + "/api/status";
   
+  // Serialize active Wi-Fi stats to upload to Web App
+  StaticJsonDocument<256> doc;
+  doc["ip"] = localIPStr;
+  doc["rssi"] = rssiVal;
+  doc["page"] = pageIdx;
+  String jsonStr;
+  serializeJson(doc, jsonStr);
+
   client.setInsecure();
   if (http.begin(client, url)) {
-    int httpCode = http.GET();
-    if (httpCode == HTTP_CODE_OK) {
+    http.addHeader("Content-Type", "application/json");
+    int httpCode = http.POST(jsonStr);
+    if (httpCode == HTTP_CODE_OK || httpCode == 201) {
       String payload = http.getString();
       parseJsonCommand(payload.c_str());
     }
@@ -394,6 +403,13 @@ void parseJsonCommand(const char* jsonStr) {
   if (arr) {
     for (int i = 0; i < 8; i++) {
       audioWaveform[i] = arr[i] | 10;
+    }
+  // 3.5 Check for Page state sync
+  if (doc.containsKey("page")) {
+    int p = doc["page"];
+    if (p != pageIdx) {
+      pageIdx = constrain(p, 0, NUM_PAGES - 1);
+      tft.fillScreen(COL_BG);
     }
   }
 
@@ -461,6 +477,7 @@ void setupBle() {
 void setup() {
   Serial.begin(115200);
   delay(300);
+  client.setInsecure();
 
   // Initialize backlight
   pinMode(TFT_BL, OUTPUT);

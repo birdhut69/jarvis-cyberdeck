@@ -36,7 +36,7 @@
 
 // Vercel Serverless Gateway HTTP/WebSocket endpoint
 // Example: "https://my-jarvis-gateway.vercel.app"
-#define GATEWAY_HOST    "jarvis-cyberdeck-gateway.vercel.app"
+#define GATEWAY_HOST    "webapp-mu-vert.vercel.app"
 #define GATEWAY_PORT    443
 
 // Polling interval in ms for HTTP backup if WebSockets are offline

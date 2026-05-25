@@ -4,7 +4,10 @@ import { NextResponse } from 'next/server';
 let jarvisState = {
   status: 'idle', // idle, thinking, speaking, trigger_listening
   text: 'JARVIS STANDBY',
-  waveform: [10, 10, 10, 10, 10, 10, 10, 10]
+  waveform: [10, 10, 10, 10, 10, 10, 10, 10],
+  ip: '0.0.0.0',
+  rssi: -100,
+  page: 2
 };
 
 export async function GET() {
@@ -35,9 +38,15 @@ export async function POST(request) {
     if (body.status) jarvisState.status = body.status;
     if (body.text) jarvisState.text = body.text;
     if (body.waveform) jarvisState.waveform = body.waveform;
+    if (body.ip) jarvisState.ip = body.ip;
+    if (body.rssi !== undefined) jarvisState.rssi = body.rssi;
+    if (body.page !== undefined) jarvisState.page = body.page;
 
-    return NextResponse.json({ success: true, state: jarvisState }, {
-      headers: { 'Access-Control-Allow-Origin': '*' }
+    return NextResponse.json(jarvisState, {
+      headers: { 
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, max-age=0'
+      }
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
