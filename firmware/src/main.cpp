@@ -100,23 +100,32 @@ void drawStatusBar() {
   tft.fillRect(0, 0, SCREEN_W, 12, COL_PANEL);
   tft.setTextSize(1);
   
-  // Wi-Fi Connection Icon/SSID
-  tft.setTextColor(wifiConnected ? COL_NEON : COL_CRIT, COL_PANEL);
-  tft.setCursor(4, 2);
-  tft.print(wifiConnected ? "Wi-Fi" : "Off");
+  // 1. Wi-Fi Icon & Signal indicator
+  uint16_t wifiCol = wifiConnected ? COL_NEON : COL_CRIT;
+  tft.drawPixel(4, 8, wifiCol);
+  tft.drawLine(2, 6, 6, 6, wifiCol);
+  tft.drawLine(0, 4, 8, 4, wifiCol);
+  tft.setTextColor(wifiCol, COL_PANEL);
+  tft.setCursor(12, 2);
+  tft.print(wifiConnected ? "ON" : "OFF");
 
-  // Current page name centered
-  const char* pageNames[] = {"DASH", "WIFI", "AI CORE", "BLE CN"};
+  // 2. Centered Page Title
+  const char* pageNames[] = {"DASHBOARD", "WI-FI STATE", "JARVIS CORE", "BLE DIALOG"};
   tft.setTextColor(COL_CYAN, COL_PANEL);
   int nw = strlen(pageNames[pageIdx]) * 6;
   tft.setCursor((SCREEN_W - nw) / 2, 2);
   tft.print(pageNames[pageIdx]);
 
-  // Bluetooth connected status icon
-  tft.setTextColor(bleConnected ? COL_CYAN : COL_DIM, COL_PANEL);
-  tft.setCursor(SCREEN_W - 20, 2);
-  tft.print("BT");
-
+  // 3. Bluetooth Icon Rune
+  uint16_t bleCol = bleConnected ? COL_CYAN : COL_DIM;
+  int bx = SCREEN_W - 12;
+  int by = 2;
+  tft.drawLine(bx, by, bx, by + 8, bleCol);
+  tft.drawLine(bx, by, bx + 3, by + 2, bleCol);
+  tft.drawLine(bx + 3, by + 2, bx, by + 4, bleCol);
+  tft.drawLine(bx, by + 4, bx + 3, by + 6, bleCol);
+  tft.drawLine(bx + 3, by + 6, bx, by + 8, bleCol);
+  
   tft.drawFastHLine(0, 12, SCREEN_W, COL_BORDER);
 }
 
@@ -254,39 +263,83 @@ void renderWifiStats() {
 }
 
 void renderJarvisCore() {
-  // Beautiful rotating vector arc reactor in idle state
-  uint16_t stateColor = COL_NEON;
-  if (currentJarvisState == STATE_THINKING) stateColor = COL_WARN;
-  else if (currentJarvisState == STATE_SPEAKING) stateColor = COL_MAGENTA;
+  // Clear the AI Core graphics face area to draw the next frame
+  tft.fillRect(4, 18, SCREEN_W - 8, 82, COL_BG);
 
-  if (currentJarvisState != STATE_SPEAKING) {
-    drawArcReactor(SCREEN_W / 2, 62, 22, angle, stateColor);
+  int cx = SCREEN_W / 2;
+  int cy = 58;
+
+  // Let's implement active blinking eyes
+  bool blink = (millis() % 4000 < 150); // blinks for 150ms every 4 seconds
+
+  if (currentJarvisState == STATE_IDLE) {
+    // ── IDLE STATE: Smiling Cybernetic AI Face ──
+    uint16_t eyeCol = COL_CYAN;
     
-    // Status text below core
-    tft.drawFastHLine(6, 98, SCREEN_W - 12, COL_DIM);
-    tft.setTextSize(1);
-    tft.setTextColor(COL_GRAY, COL_BG);
-    tft.setCursor(10, 106);
-    if (currentJarvisState == STATE_THINKING) {
-      tft.print("STATUS: THINKING...");
+    // Eyes: Draw circular eyes or lines if blinking
+    if (blink) {
+      tft.drawFastHLine(cx - 24, cy, 12, eyeCol);
+      tft.drawFastHLine(cx + 12, cy, 12, eyeCol);
     } else {
-      tft.print("STATUS: CORE IDLE");
+      tft.fillCircle(cx - 18, cy, 7, eyeCol);
+      tft.fillCircle(cx - 18, cy, 2, COL_WHITE); // highlight
+      tft.fillCircle(cx + 18, cy, 7, eyeCol);
+      tft.fillCircle(cx + 18, cy, 2, COL_WHITE); // highlight
     }
-  } else {
-    // Pulsing audio waveform visualizer
-    tft.fillRect(4, 18, SCREEN_W - 8, 48, COL_BG);
-    int barW = (SCREEN_W - 20) / 8;
-    for (int i = 0; i < 8; i++) {
-      int h = audioWaveform[i] % 38;
-      if (h < 4) h = 4;
-      tft.fillRect(10 + (i * barW), 62 - h, barW - 2, h, COL_MAGENTA);
-      tft.drawRect(10 + (i * barW), 62 - h, barW - 2, h, COL_CYAN);
-    }
-    tft.drawFastHLine(6, 70, SCREEN_W - 12, COL_BORDER);
+    
+    // Mouth: Calm line
+    tft.drawFastHLine(cx - 15, cy + 18, 30, COL_NEON);
+  }
+  else if (currentJarvisState == STATE_THINKING) {
+    // ── THINKING STATE: Alert Eyes Shifting + Swirling Arc ──
+    uint16_t eyeCol = COL_WARN;
+    int shift = sin(millis() / 150.0) * 4;
+    
+    tft.fillCircle(cx - 18 + shift, cy, 5, eyeCol);
+    tft.fillCircle(cx + 18 + shift, cy, 5, eyeCol);
+    
+    // Swirling thinking arc around mouth
+    int mouthAngle = (millis() / 2) % 360;
+    float rad = radians(mouthAngle);
+    int mx = cx + cos(rad) * 12;
+    int my = cy + 18 + sin(rad) * 4;
+    tft.fillCircle(mx, my, 2, COL_WARN);
+    tft.drawCircle(cx, cy + 18, 8, COL_DIM);
+  }
+  else if (currentJarvisState == STATE_SPEAKING) {
+    // ── SPEAKING STATE: Glowing Pulsing Core + Synchronized Vocal Mouth ──
+    uint16_t eyeCol = COL_MAGENTA;
+    int eyePulse = sin(millis() / 80.0) * 2 + 7;
+    
+    tft.fillCircle(cx - 18, cy, eyePulse, eyeCol);
+    tft.fillCircle(cx + 18, cy, eyePulse, eyeCol);
+
+    // Mouth Lip sync height mapped directly to incoming real-time audio waveform!
+    int h = audioWaveform[4] % 16;
+    if (h < 2) h = 2;
+    tft.fillRect(cx - 15, cy + 18 - h/2, 30, h, COL_NEON);
+    tft.drawRect(cx - 15, cy + 18 - h/2, 30, h, COL_CYAN);
+  }
+  else {
+    // ── LISTENING STATE: Large Glowing Cyan Eyes ──
+    uint16_t eyeCol = COL_MAGENTA;
+    int size = sin(millis() / 120.0) * 2 + 9;
+    
+    tft.fillCircle(cx - 18, cy, size, eyeCol);
+    tft.fillCircle(cx + 18, cy, size, eyeCol);
+    
+    // Smiling curved mouth
+    tft.drawPixel(cx - 16, cy + 16, COL_CYAN);
+    tft.drawPixel(cx + 16, cy + 16, COL_CYAN);
+    tft.drawFastHLine(cx - 15, cy + 18, 30, COL_CYAN);
+    tft.drawPixel(cx - 10, cy + 19, COL_CYAN);
+    tft.drawPixel(cx + 10, cy + 19, COL_CYAN);
+    tft.drawFastHLine(cx - 9, cy + 20, 18, COL_CYAN);
   }
 
-  // Draw scrolling subtitle text
-  printWrappedText(jarvisText, 6, 114, 4, COL_WHITE);
+  // Draw scrolling subtitle text block at the bottom
+  tft.drawFastHLine(6, 102, SCREEN_W - 12, COL_DIM);
+  printWrappedText(jarvisText, 6, 110, 4, COL_WHITE);
 }
 
 void renderBleConsole() {
