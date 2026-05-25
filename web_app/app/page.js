@@ -22,11 +22,18 @@ export default function JarvisDashboard() {
   const [txCharacteristic, setTxCharacteristic] = useState(null);
   const [rxCharacteristic, setRxCharacteristic] = useState(null);
 
+  // Music & Task State
+  const [musicQuery, setMusicQuery] = useState(null);
+  const [timerActive, setTimerActive] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timerLabel, setTimerLabel] = useState('');
+
   const recognitionRef = useRef(null);
   const synthRef = useRef(null);
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
   const audioCtxRef = useRef(null);
+  const timerRef = useRef(null);
 
   const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
   const RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
@@ -331,6 +338,49 @@ export default function JarvisDashboard() {
     }
   };
 
+  // ── Action Dispatcher ─────────────────────────────────────────
+  const executeAction = (action, data) => {
+    switch (action) {
+      case 'play_music':
+        if (data?.query) {
+          setMusicQuery(data.query);
+          playSoundEffect('success');
+        }
+        break;
+      case 'set_timer': {
+        const secs = parseInt(data?.seconds) || 60;
+        setTimerSeconds(secs);
+        setTimerLabel(data?.label || 'Timer');
+        setTimerActive(true);
+        if (timerRef.current) clearInterval(timerRef.current);
+        let remaining = secs;
+        timerRef.current = setInterval(() => {
+          remaining--;
+          setTimerSeconds(remaining);
+          if (remaining <= 0) {
+            clearInterval(timerRef.current);
+            setTimerActive(false);
+            playSoundEffect('success');
+            speakResponse('Sir, your timer has completed.');
+          }
+        }, 1000);
+        break;
+      }
+      case 'open_url':
+        if (data?.url) window.open(data.url, '_blank');
+        break;
+      case 'search_web':
+        if (data?.query) window.open(`https://www.google.com/search?q=${encodeURIComponent(data.query)}`, '_blank');
+        break;
+      case 'get_time': break; // response text handles it
+      case 'get_weather': {
+        if (data?.city) window.open(`https://wttr.in/${encodeURIComponent(data.city)}`, '_blank');
+        break;
+      }
+      default: break;
+    }
+  };
+
   const handleSendToGemini = async (promptText) => {
     updateServerStatus('thinking', 'JARVIS CORE PROCESSING...');
     setJarvisResponse('Analyzing neural pathways...');
@@ -346,6 +396,10 @@ export default function JarvisDashboard() {
       if (data.response) {
         setJarvisResponse(data.response);
         speakResponse(data.response);
+        // Execute any action returned by Gemini
+        if (data.action && data.action !== 'none') {
+          executeAction(data.action, data.data);
+        }
       } else {
         throw new Error(data.error || 'AI Module Timeout');
       }
@@ -746,6 +800,70 @@ export default function JarvisDashboard() {
           </button>
         </form>
 
+        {/* Music Player Widget */}
+        {musicQuery && (
+          <div style={{
+            background: 'rgba(0,0,0,0.7)',
+            border: '1px solid rgba(248, 31, 255, 0.35)',
+            borderRadius: '14px',
+            padding: '15px',
+            marginTop: '20px',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '11px', color: '#f81fff', letterSpacing: '1px' }}>
+                ♪ NOW PLAYING: {musicQuery.toUpperCase()}
+              </span>
+              <button onClick={() => setMusicQuery(null)} style={{
+                background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px',
+                color: '#fff', padding: '2px 8px', fontSize: '10px', cursor: 'pointer'
+              }}>✕ CLOSE</button>
+            </div>
+            <iframe
+              width="100%" height="80"
+              src={`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(musicQuery)}&autoplay=1`}
+              allow="autoplay; encrypted-media"
+              style={{ border: 'none', borderRadius: '8px' }}
+            />
+          </div>
+        )}
+
+        {/* Active Timer Widget */}
+        {timerActive && (
+          <div style={{
+            background: 'rgba(0,0,0,0.7)',
+            border: '1px solid rgba(7, 232, 100, 0.4)',
+            borderRadius: '14px',
+            padding: '15px',
+            marginTop: '15px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '15px'
+          }}>
+            <div style={{
+              width: '50px', height: '50px', borderRadius: '50%',
+              border: '3px solid #07E864',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '18px', fontWeight: 'bold', color: '#07E864',
+              boxShadow: '0 0 15px rgba(7, 232, 100, 0.3)',
+              animation: 'pulse 1s ease-in-out infinite'
+            }}>
+              {timerSeconds}
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>⏱ ACTIVE TIMER</div>
+              <div style={{ fontSize: '15px', color: '#07E864', fontWeight: 'bold' }}>{timerLabel}</div>
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                {Math.floor(timerSeconds / 60)}:{String(timerSeconds % 60).padStart(2, '0')} remaining
+              </div>
+            </div>
+            <button onClick={() => { clearInterval(timerRef.current); setTimerActive(false); }} style={{
+              marginLeft: 'auto', background: 'none', border: '1px solid rgba(255,100,100,0.4)',
+              borderRadius: '8px', color: '#ff6464', padding: '6px 12px', fontSize: '11px', cursor: 'pointer'
+            }}>CANCEL</button>
+          </div>
+        )}
+
         {/* BLE Logs Console */}
         {bleConnected && (
           <div style={{
@@ -785,6 +903,10 @@ export default function JarvisDashboard() {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.7; transform: scale(0.95); }
         }
       `}</style>
     </div>
