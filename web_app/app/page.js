@@ -5,9 +5,12 @@ import React, { useState, useEffect, useRef } from 'react';
 export default function JarvisDashboard() {
   const [status, setStatus] = useState('idle');
   const [transcript, setTranscript] = useState('');
-  const [jarvisResponse, setJarvisResponse] = useState('JARVIS SYSTEM ONLINE. Standby.');
+  const [jarvisResponse, setJarvisResponse] = useState('JARVIS SYSTEM ONLINE. Say "Hey Jarvis" to begin.');
   const [isListening, setIsListening] = useState(false);
   const [textModeInput, setTextModeInput] = useState('');
+  const [wakeWordActive, setWakeWordActive] = useState(false);
+  const wakeRecRef = useRef(null);
+  const pendingActionRef = useRef(null);
 
   // Wi-Fi Sync Telemetry
   const [espIP, setEspIP] = useState('0.0.0.0');
@@ -100,13 +103,14 @@ export default function JarvisDashboard() {
     }
   };
 
-  // ── Speech Engines & Canvas Vector Spectrogram ────────────────
+  // ── Speech Engines & Wake Word ─────────────────────────────────
   useEffect(() => {
     playSoundEffect('boot');
 
     if (typeof window !== 'undefined') {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
+        // Command recognition (single shot for actual commands)
         const rec = new SpeechRecognition();
         rec.continuous = false;
         rec.interimResults = false;
@@ -116,26 +120,65 @@ export default function JarvisDashboard() {
           setIsListening(true);
           updateServerStatus('thinking', 'JARVIS CORE PROCESSING...');
         };
-
         rec.onresult = async (event) => {
           const text = event.results[0][0].transcript;
           setTranscript(text);
           await handleSendToGemini(text);
         };
-
-        rec.onerror = (err) => {
-          console.error(err);
+        rec.onerror = () => {
           setIsListening(false);
           updateServerStatus('idle', 'MIC TIMEOUT');
+          startWakeWordListener();
         };
-
         rec.onend = () => {
           setIsListening(false);
+          // Resume wake word listening after command is done
+          setTimeout(() => startWakeWordListener(), 2000);
         };
-
         recognitionRef.current = rec;
+
+        // Wake word listener (continuous, always listening for "hey jarvis")
+        const wakeRec = new SpeechRecognition();
+        wakeRec.continuous = true;
+        wakeRec.interimResults = true;
+        wakeRec.lang = 'en-US';
+
+        wakeRec.onresult = (event) => {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const t = event.results[i][0].transcript.toLowerCase();
+            if (t.includes('jarvis') || t.includes('jarwis') || t.includes('jarves')) {
+              // Wake word detected! Stop wake listener and start command mode
+              try { wakeRec.stop(); } catch(e) {}
+              setWakeWordActive(false);
+              playSoundEffect('listening');
+              speakResponse('Yes Sir, I am listening.');
+              // Start command recognition after brief pause
+              setTimeout(() => {
+                try { recognitionRef.current?.start(); } catch(e) {}
+              }, 1800);
+              return;
+            }
+          }
+        };
+        wakeRec.onerror = () => {
+          setWakeWordActive(false);
+          setTimeout(() => startWakeWordListener(), 1000);
+        };
+        wakeRec.onend = () => {
+          setWakeWordActive(false);
+          // Auto restart wake listener if not in command mode
+          if (!isListening) {
+            setTimeout(() => startWakeWordListener(), 500);
+          }
+        };
+        wakeRecRef.current = wakeRec;
+
+        // Start wake word listening immediately
+        setTimeout(() => startWakeWordListener(), 1500);
       }
       synthRef.current = window.speechSynthesis;
+      // Preload voices
+      synthRef.current.getVoices();
     }
 
     // Dynamic Cloud Sync telemetries
@@ -143,25 +186,32 @@ export default function JarvisDashboard() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
-        
         setEspState(data.status);
         if (data.ip) setEspIP(data.ip);
         if (data.rssi) setEspRSSI(data.rssi + " dBm");
-        
-        if (data.status === 'trigger_listening') {
-          startListening();
-        }
+        if (data.status === 'trigger_listening') startListening();
       } catch (err) {}
     }, 1000);
 
-    // Initialise 60fps Vector Spectrogram Loop on Canvas
     initCanvasSpectrogram();
 
     return () => {
       clearInterval(interval);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      try { wakeRecRef.current?.stop(); } catch(e) {}
     };
   }, []);
+
+  const startWakeWordListener = () => {
+    if (isListening) return;
+    if (synthRef.current?.speaking) return;
+    try {
+      wakeRecRef.current?.start();
+      setWakeWordActive(true);
+    } catch(e) {
+      // Already running or blocked
+    }
+  };
 
   // ── Vector Audio Spectrogram Renderer ────────────────────────
   const initCanvasSpectrogram = () => {
@@ -340,10 +390,15 @@ export default function JarvisDashboard() {
 
   // ── Action Dispatcher ─────────────────────────────────────────
   const executeAction = (action, data) => {
+    // Store action for user-gesture execution if popup blocked
+    pendingActionRef.current = { action, data };
+
     switch (action) {
       case 'play_music':
         if (data?.query) {
+          const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(data.query)}`;
           setMusicQuery(data.query);
+          window.open(url, '_blank');
           playSoundEffect('success');
         }
         break;
@@ -372,11 +427,10 @@ export default function JarvisDashboard() {
       case 'search_web':
         if (data?.query) window.open(`https://www.google.com/search?q=${encodeURIComponent(data.query)}`, '_blank');
         break;
-      case 'get_time': break; // response text handles it
-      case 'get_weather': {
+      case 'get_time': break;
+      case 'get_weather':
         if (data?.city) window.open(`https://wttr.in/${encodeURIComponent(data.city)}`, '_blank');
         break;
-      }
       default: break;
     }
   };
@@ -723,7 +777,7 @@ export default function JarvisDashboard() {
             color: isListening ? '#f81fff' : '#00f5ff',
             textShadow: isListening ? '0 0 8px rgba(248, 31, 255, 0.5)' : '0 0 8px rgba(0, 245, 255, 0.5)'
           }}>
-            {isListening ? '🎤 LISTENING ON LOCAL MICROPHONE...' : 'TAP CORE TO COMMENCE'}
+            {isListening ? '🎤 LISTENING FOR COMMAND...' : wakeWordActive ? '🟢 SAY "HEY JARVIS" TO ACTIVATE' : 'TAP CORE OR SAY "HEY JARVIS"'}
           </span>
         </div>
 
@@ -808,23 +862,26 @@ export default function JarvisDashboard() {
             borderRadius: '14px',
             padding: '15px',
             marginTop: '20px',
-            position: 'relative'
+            display: 'flex', alignItems: 'center', gap: '15px'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span style={{ fontSize: '11px', color: '#f81fff', letterSpacing: '1px' }}>
-                ♪ NOW PLAYING: {musicQuery.toUpperCase()}
-              </span>
-              <button onClick={() => setMusicQuery(null)} style={{
-                background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px',
-                color: '#fff', padding: '2px 8px', fontSize: '10px', cursor: 'pointer'
-              }}>✕ CLOSE</button>
+            <div style={{
+              width: '42px', height: '42px', borderRadius: '10px',
+              background: 'linear-gradient(135deg, #f81fff, #00f5ff)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '20px', flexShrink: 0
+            }}>♪</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>NOW PLAYING</div>
+              <div style={{ fontSize: '15px', color: '#f81fff', fontWeight: 'bold' }}>{musicQuery}</div>
             </div>
-            <iframe
-              width="100%" height="80"
-              src={`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(musicQuery)}&autoplay=1`}
-              allow="autoplay; encrypted-media"
-              style={{ border: 'none', borderRadius: '8px' }}
-            />
+            <button onClick={() => window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(musicQuery)}`, '_blank')} style={{
+              background: 'rgba(248,31,255,0.2)', border: '1px solid #f81fff', borderRadius: '8px',
+              color: '#f81fff', padding: '6px 12px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold'
+            }}>▶ OPEN</button>
+            <button onClick={() => setMusicQuery(null)} style={{
+              background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px',
+              color: '#fff', padding: '6px 8px', fontSize: '10px', cursor: 'pointer'
+            }}>✕</button>
           </div>
         )}
 
