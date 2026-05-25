@@ -29,6 +29,8 @@ export default function JarvisDashboard() {
 
   // Music & Task State
   const [musicQuery, setMusicQuery] = useState(null);
+  const [musicVideoId, setMusicVideoId] = useState(null);
+  const [musicTitle, setMusicTitle] = useState('');
   const [timerActive, setTimerActive] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerLabel, setTimerLabel] = useState('');
@@ -330,6 +332,17 @@ export default function JarvisDashboard() {
       case 'play_music':
         if (data?.query) {
           setMusicQuery(data.query);
+          setMusicTitle(data.query);
+          // Fetch real video ID from our music search API
+          fetch(`/api/music?q=${encodeURIComponent(data.query)}`)
+            .then(r => r.json())
+            .then(d => {
+              if (d.videoId) {
+                setMusicVideoId(d.videoId);
+                setMusicTitle(d.title || data.query);
+              }
+            })
+            .catch(() => {});
           playSoundEffect('success');
         }
         break;
@@ -484,9 +497,10 @@ export default function JarvisDashboard() {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'center',
+      justifyContent: 'flex-start',
       position: 'relative',
-      fontFamily: "'Share Tech Mono', monospace"
+      fontFamily: "'Share Tech Mono', monospace",
+      overflowY: 'auto'
     }}>
       
       {/* Premium Cyberpunk Scanlines and Grid Overlays */}
@@ -773,20 +787,6 @@ export default function JarvisDashboard() {
           ))}
         </div>
 
-        {/* TFT Page Navigation */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
-          {['📊 Dashboard', '📡 Wi-Fi', '🔮 AI Core', '📱 BLE'].map((label, idx) => (
-            <button key={idx} onClick={() => handlePageSwitch(idx)} style={{
-              flex: 1, padding: '8px 4px', fontSize: '11px', cursor: 'pointer',
-              fontFamily: "'Share Tech Mono', monospace",
-              background: currentPage === idx ? 'rgba(0,245,255,0.15)' : 'rgba(0,0,0,0.4)',
-              border: currentPage === idx ? '1px solid #00f5ff' : '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '8px',
-              color: currentPage === idx ? '#00f5ff' : 'rgba(255,255,255,0.5)',
-              transition: 'all 0.2s'
-            }}>{label}</button>
-          ))}
-        </div>
 
         {/* Chat History */}
         {chatHistory.length > 0 && (
@@ -870,21 +870,27 @@ export default function JarvisDashboard() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <span style={{ fontSize: '12px', color: '#f81fff', fontWeight: 'bold' }}>
-                ♪ {musicQuery.toUpperCase()}
+                ♪ {musicTitle.toUpperCase() || musicQuery.toUpperCase()}
               </span>
-              <button onClick={() => setMusicQuery(null)} style={{
+              <button onClick={() => { setMusicQuery(null); setMusicVideoId(null); }} style={{
                 background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px',
                 color: '#fff', padding: '4px 10px', fontSize: '11px', cursor: 'pointer'
               }}>✕ CLOSE</button>
             </div>
-            <iframe
-              width="100%" height="152"
-              src={`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(musicQuery)}&autoplay=1`}
-              allow="autoplay; encrypted-media"
-              allowFullScreen
-              style={{ border: 'none', borderRadius: '10px', background: '#000' }}
-              title="JARVIS Music Player"
-            />
+            {musicVideoId ? (
+              <iframe
+                width="100%" height="200"
+                src={`https://www.youtube.com/embed/${musicVideoId}?autoplay=1&rel=0`}
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+                style={{ border: 'none', borderRadius: '10px' }}
+                title="JARVIS Music Player"
+              />
+            ) : (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>
+                Loading music...
+              </div>
+            )}
           </div>
         )}
 
