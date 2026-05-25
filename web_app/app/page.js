@@ -9,14 +9,16 @@ export default function JarvisDashboard() {
   const [isListening, setIsListening] = useState(false);
   const [textModeInput, setTextModeInput] = useState('');
   const [wakeWordActive, setWakeWordActive] = useState(false);
-  const wakeRecRef = useRef(null);
+  const [chatHistory, setChatHistory] = useState([]);
   const pendingActionRef = useRef(null);
+  const isProcessingRef = useRef(false);
+  const wakeDetectedRef = useRef(false);
 
   // Wi-Fi Sync Telemetry
   const [espIP, setEspIP] = useState('0.0.0.0');
   const [espRSSI, setEspRSSI] = useState('Offline');
   const [espState, setEspState] = useState('Idle');
-  const [currentPage, setCurrentPage] = useState(2); // Jarvis AI Page
+  const [currentPage, setCurrentPage] = useState(2);
 
   // Web Bluetooth (BLE) State
   const [bleDevice, setBleDevice] = useState(null);
@@ -49,139 +51,125 @@ export default function JarvisDashboard() {
         audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
       }
       const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-
+      if (ctx.state === 'suspended') ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
-
       const now = ctx.currentTime;
-
       if (type === 'click') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(1200, now);
+        osc.type = 'sine'; osc.frequency.setValueAtTime(1200, now);
         osc.frequency.exponentialRampToValueAtTime(600, now + 0.08);
-        gain.gain.setValueAtTime(0.08, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-        osc.start(now);
-        osc.stop(now + 0.08);
-      } 
-      else if (type === 'boot') {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(150, now);
+        gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        osc.start(now); osc.stop(now + 0.08);
+      } else if (type === 'boot') {
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(150, now);
         osc.frequency.exponentialRampToValueAtTime(600, now + 0.35);
-        gain.gain.setValueAtTime(0.12, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-        osc.start(now);
-        osc.stop(now + 0.35);
-      } 
-      else if (type === 'success') {
-        // Futuristic double chime
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(523.25, now); // C5
-        osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
-        gain.gain.setValueAtTime(0.06, now);
-        gain.gain.setValueAtTime(0.06, now + 0.1);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-        osc.start(now);
-        osc.stop(now + 0.3);
-      }
-      else if (type === 'listening') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, now); // A5
+        gain.gain.setValueAtTime(0.12, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc.start(now); osc.stop(now + 0.35);
+      } else if (type === 'success') {
+        osc.type = 'sine'; osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.1);
+        gain.gain.setValueAtTime(0.06, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+      } else if (type === 'listening') {
+        osc.type = 'sine'; osc.frequency.setValueAtTime(880, now);
         osc.frequency.exponentialRampToValueAtTime(1200, now + 0.15);
-        gain.gain.setValueAtTime(0.06, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-        osc.start(now);
-        osc.stop(now + 0.15);
+        gain.gain.setValueAtTime(0.06, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now); osc.stop(now + 0.15);
       }
-    } catch (e) {
-      console.warn("AudioContext block:", e);
-    }
+    } catch (e) {}
   };
 
-  // ── Speech Engines & Wake Word ─────────────────────────────────
+  // ── Single Continuous Speech Recognition (Wake Word + Command) ──
   useEffect(() => {
     playSoundEffect('boot');
 
     if (typeof window !== 'undefined') {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        // Command recognition (single shot for actual commands)
-        const rec = new SpeechRecognition();
-        rec.continuous = false;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SR) {
+        const rec = new SR();
+        rec.continuous = true;
         rec.interimResults = false;
         rec.lang = 'en-US';
 
         rec.onstart = () => {
-          setIsListening(true);
-          updateServerStatus('thinking', 'JARVIS CORE PROCESSING...');
+          setWakeWordActive(true);
         };
-        rec.onresult = async (event) => {
-          const text = event.results[0][0].transcript;
-          setTranscript(text);
-          await handleSendToGemini(text);
-        };
-        rec.onerror = () => {
-          setIsListening(false);
-          updateServerStatus('idle', 'MIC TIMEOUT');
-          startWakeWordListener();
-        };
-        rec.onend = () => {
-          setIsListening(false);
-          // Resume wake word listening after command is done
-          setTimeout(() => startWakeWordListener(), 2000);
-        };
-        recognitionRef.current = rec;
 
-        // Wake word listener (continuous, always listening for "hey jarvis")
-        const wakeRec = new SpeechRecognition();
-        wakeRec.continuous = true;
-        wakeRec.interimResults = true;
-        wakeRec.lang = 'en-US';
+        rec.onresult = (event) => {
+          // Get the latest final result
+          const last = event.results[event.results.length - 1];
+          if (!last.isFinal) return;
+          const text = last[0].transcript.trim().toLowerCase();
 
-        wakeRec.onresult = (event) => {
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const t = event.results[i][0].transcript.toLowerCase();
-            if (t.includes('jarvis') || t.includes('jarwis') || t.includes('jarves')) {
-              // Wake word detected! Stop wake listener and start command mode
-              try { wakeRec.stop(); } catch(e) {}
-              setWakeWordActive(false);
+          // Skip if already processing a command
+          if (isProcessingRef.current) return;
+
+          // Check for wake word
+          const hasWake = text.includes('jarvis') || text.includes('jarwis') || text.includes('jarves');
+
+          if (hasWake) {
+            // Strip wake word to get the command
+            let command = text
+              .replace(/hey\s*jarvis/gi, '')
+              .replace(/jarvis/gi, '')
+              .replace(/jarwis/gi, '')
+              .replace(/jarves/gi, '')
+              .trim();
+
+            if (command.length > 2) {
+              // Wake word + command in one sentence: "Hey Jarvis play some music"
               playSoundEffect('listening');
-              speakResponse('Yes Sir, I am listening.');
-              // Start command recognition after brief pause
-              setTimeout(() => {
-                try { recognitionRef.current?.start(); } catch(e) {}
-              }, 1800);
-              return;
+              isProcessingRef.current = true;
+              setIsListening(true);
+              setTranscript(command);
+              handleSendToGemini(command);
+            } else {
+              // Just "Hey Jarvis" — acknowledge and wait for next utterance
+              playSoundEffect('listening');
+              wakeDetectedRef.current = true;
+              setIsListening(true);
+              setJarvisResponse('Yes Sir, I am listening...');
+              updateServerStatus('thinking', 'AWAITING COMMAND...');
             }
+          } else if (wakeDetectedRef.current) {
+            // This is the follow-up command after "Hey Jarvis"
+            wakeDetectedRef.current = false;
+            isProcessingRef.current = true;
+            setTranscript(text);
+            handleSendToGemini(text);
           }
+          // If no wake word and not in wake mode, ignore (passive)
         };
-        wakeRec.onerror = () => {
-          setWakeWordActive(false);
-          setTimeout(() => startWakeWordListener(), 1000);
-        };
-        wakeRec.onend = () => {
-          setWakeWordActive(false);
-          // Auto restart wake listener if not in command mode
-          if (!isListening) {
-            setTimeout(() => startWakeWordListener(), 500);
-          }
-        };
-        wakeRecRef.current = wakeRec;
 
-        // Start wake word listening immediately
-        setTimeout(() => startWakeWordListener(), 1500);
+        rec.onerror = (e) => {
+          if (e.error !== 'no-speech' && e.error !== 'aborted') {
+            console.warn('Speech error:', e.error);
+          }
+        };
+
+        rec.onend = () => {
+          setWakeWordActive(false);
+          // Always restart unless we're processing
+          setTimeout(() => {
+            if (!isProcessingRef.current) {
+              try { rec.start(); } catch(e) {}
+            }
+          }, 300);
+        };
+
+        recognitionRef.current = rec;
+        // Start listening after a short delay
+        setTimeout(() => {
+          try { rec.start(); } catch(e) {}
+        }, 1500);
       }
       synthRef.current = window.speechSynthesis;
-      // Preload voices
       synthRef.current.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => synthRef.current.getVoices();
     }
 
-    // Dynamic Cloud Sync telemetries
     const interval = setInterval(async () => {
       try {
         const res = await fetch('/api/status');
@@ -198,20 +186,9 @@ export default function JarvisDashboard() {
     return () => {
       clearInterval(interval);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      try { wakeRecRef.current?.stop(); } catch(e) {}
+      try { recognitionRef.current?.stop(); } catch(e) {}
     };
   }, []);
-
-  const startWakeWordListener = () => {
-    if (isListening) return;
-    if (synthRef.current?.speaking) return;
-    try {
-      wakeRecRef.current?.start();
-      setWakeWordActive(true);
-    } catch(e) {
-      // Already running or blocked
-    }
-  };
 
   // ── Vector Audio Spectrogram Renderer ────────────────────────
   const initCanvasSpectrogram = () => {
@@ -379,13 +356,13 @@ export default function JarvisDashboard() {
     if (synthRef.current && synthRef.current.speaking) {
       synthRef.current.cancel();
     }
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
-        recognitionRef.current.stop();
-      }
-    }
+    // For manual button press: set wake detected so next utterance becomes command
+    wakeDetectedRef.current = true;
+    setIsListening(true);
+    setJarvisResponse('Yes Sir, I am listening...');
+    updateServerStatus('thinking', 'AWAITING COMMAND...');
+    // Make sure recognition is running
+    try { recognitionRef.current?.start(); } catch(e) {}
   };
 
   // ── Action Dispatcher ─────────────────────────────────────────
@@ -438,6 +415,7 @@ export default function JarvisDashboard() {
   const handleSendToGemini = async (promptText) => {
     updateServerStatus('thinking', 'JARVIS CORE PROCESSING...');
     setJarvisResponse('Analyzing neural pathways...');
+    setChatHistory(prev => [...prev, { role: 'user', text: promptText }]);
     
     try {
       const res = await fetch('/api/chat', {
@@ -449,8 +427,8 @@ export default function JarvisDashboard() {
 
       if (data.response) {
         setJarvisResponse(data.response);
+        setChatHistory(prev => [...prev, { role: 'jarvis', text: data.response }]);
         speakResponse(data.response);
-        // Execute any action returned by Gemini
         if (data.action && data.action !== 'none') {
           executeAction(data.action, data.data);
         }
@@ -460,6 +438,9 @@ export default function JarvisDashboard() {
     } catch (err) {
       setJarvisResponse(`Neural Error: ${err.message}`);
       updateServerStatus('idle', 'JARVIS STANDBY');
+      isProcessingRef.current = false;
+      setIsListening(false);
+      try { recognitionRef.current?.start(); } catch(e) {}
     }
   };
 
@@ -520,6 +501,13 @@ export default function JarvisDashboard() {
     utterance.onend = () => {
       updateServerStatus('idle', 'JARVIS STANDBY');
       playSoundEffect('success');
+      isProcessingRef.current = false;
+      setIsListening(false);
+      wakeDetectedRef.current = false;
+      // Restart continuous recognition after speaking
+      setTimeout(() => {
+        try { recognitionRef.current?.start(); } catch(e) {}
+      }, 500);
     };
 
     synthRef.current.speak(utterance);
@@ -808,6 +796,69 @@ export default function JarvisDashboard() {
             </p>
           </div>
         </div>
+
+        {/* Quick Action Buttons */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '15px' }}>
+          {[
+            { label: '🎵 Play Music', cmd: 'Play some lofi hip hop beats' },
+            { label: '⏱ 5min Timer', cmd: 'Set a timer for 5 minutes' },
+            { label: '😂 Tell Joke', cmd: 'Tell me a funny joke' },
+            { label: '🌤 Weather', cmd: 'What is the weather in Pune?' },
+            { label: '🕐 Time', cmd: 'What time is it right now?' },
+            { label: '🔍 Search', cmd: 'Search for latest tech news' },
+          ].map((btn, i) => (
+            <button key={i} onClick={() => { setTranscript(btn.cmd); handleSendToGemini(btn.cmd); }} style={{
+              background: 'rgba(0,245,255,0.08)', border: '1px solid rgba(0,245,255,0.25)',
+              borderRadius: '20px', padding: '6px 14px', color: '#00f5ff', fontSize: '12px',
+              cursor: 'pointer', fontFamily: "'Share Tech Mono', monospace", transition: 'all 0.2s',
+              whiteSpace: 'nowrap'
+            }}
+            onMouseEnter={e => { e.target.style.background = 'rgba(0,245,255,0.2)'; e.target.style.borderColor = '#00f5ff'; }}
+            onMouseLeave={e => { e.target.style.background = 'rgba(0,245,255,0.08)'; e.target.style.borderColor = 'rgba(0,245,255,0.25)'; }}
+            >{btn.label}</button>
+          ))}
+        </div>
+
+        {/* TFT Page Navigation */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
+          {['📊 Dashboard', '📡 Wi-Fi', '🔮 AI Core', '📱 BLE'].map((label, idx) => (
+            <button key={idx} onClick={() => handlePageSwitch(idx)} style={{
+              flex: 1, padding: '8px 4px', fontSize: '11px', cursor: 'pointer',
+              fontFamily: "'Share Tech Mono', monospace",
+              background: currentPage === idx ? 'rgba(0,245,255,0.15)' : 'rgba(0,0,0,0.4)',
+              border: currentPage === idx ? '1px solid #00f5ff' : '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px',
+              color: currentPage === idx ? '#00f5ff' : 'rgba(255,255,255,0.5)',
+              transition: 'all 0.2s'
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {/* Chat History */}
+        {chatHistory.length > 0 && (
+          <div style={{
+            background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '12px', padding: '12px', marginBottom: '15px',
+            maxHeight: '200px', overflowY: 'auto'
+          }}>
+            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.35)', letterSpacing: '1px' }}>
+              CONVERSATION LOG ({chatHistory.length} messages)
+            </span>
+            {chatHistory.slice(-10).map((msg, i) => (
+              <div key={i} style={{
+                padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                fontSize: '13px', lineHeight: '1.4'
+              }}>
+                <span style={{ color: msg.role === 'user' ? '#f81fff' : '#00f5ff', fontSize: '10px' }}>
+                  {msg.role === 'user' ? '> YOU: ' : '> JARVIS: '}
+                </span>
+                <span style={{ color: msg.role === 'user' ? 'rgba(255,255,255,0.7)' : '#00f5ff' }}>
+                  {msg.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Exec Input Form */}
         <form onSubmit={handleTextSubmit} style={{ display: 'flex', gap: '12px', marginBottom: bleConnected ? '25px' : '0px' }}>
