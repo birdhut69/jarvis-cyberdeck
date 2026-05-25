@@ -300,164 +300,134 @@ void renderWifiStats() {
   tft.setCursor(76, y); tft.print("14 ms");
 }
 
-// ── Mature Iron Man Visor Face ─────────────────────────────────
-
-void drawVisorEye(int x, int y, int w, int h, uint16_t col, bool blink, int pupilShift) {
-  if (blink) {
-    // Blink: narrow slit
-    tft.drawFastHLine(x, y + h/2, w, col);
-    tft.drawFastHLine(x, y + h/2 - 1, w, COL_DIM);
-    return;
-  }
-  // Angular trapezoidal eye shape
-  tft.drawLine(x + 3, y, x + w - 1, y, col);           // top edge
-  tft.drawLine(x, y + h, x + w - 4, y + h, col);       // bottom edge
-  tft.drawLine(x + 3, y, x, y + h, col);                // left slant
-  tft.drawLine(x + w - 1, y, x + w - 4, y + h, col);   // right slant
-
-  // Inner glow fill
-  for (int row = 1; row < h; row++) {
-    float t = (float)row / h;
-    int lx = x + 3 - (int)(3 * t);
-    int rx = x + w - 1 - (int)(3 * t);
-    tft.drawFastHLine(lx + 1, y + row, rx - lx - 1, COL_BAR_BG);
-  }
-
-  // Pupil: bright dot that can shift
-  int px = x + w/2 + pupilShift;
-  int py = y + h/2;
-  tft.fillRect(px - 2, py - 1, 4, 3, COL_WHITE);
-  tft.drawPixel(px, py, col);
-  
-  // Crosshair in eye
-  tft.drawFastHLine(x + 2, py, 3, COL_DIM);
-  tft.drawFastHLine(px + 3, py, 3, COL_DIM);
-}
+// ── Arc Reactor Core Engine ───────────────────────────────────
 
 void renderJarvisCore() {
-  // Clear face area
+  // Clear the reactor canvas
   tft.fillRect(0, 13, SCREEN_W, SCREEN_H - 25, COL_BG);
 
   int cx = SCREEN_W / 2;
-  int faceTop = 20;
+  int cy = 56;
 
-  // ── Pick color theme by state ──
+  // ── State-dependent color theme ──
   uint16_t mainCol = COL_CYAN;
   uint16_t accentCol = COL_NEON;
   const char* stateLabel = "STANDBY";
+  int rotSpeed = 3;
   if (currentJarvisState == STATE_THINKING) {
     mainCol = COL_WARN; accentCol = COL_WHITE; stateLabel = "ANALYZING";
+    rotSpeed = 8;
   } else if (currentJarvisState == STATE_SPEAKING) {
     mainCol = COL_MAGENTA; accentCol = COL_CYAN; stateLabel = "SPEAKING";
+    rotSpeed = 5;
   } else if (currentJarvisState == STATE_CONNECTING) {
-    mainCol = COL_CRIT; accentCol = COL_WARN; stateLabel = "LINKING";
+    mainCol = COL_CRIT; accentCol = COL_WARN; stateLabel = "CONNECTING";
+    rotSpeed = 6;
   }
 
-  // ── Breathing glow animation ──
-  if (breatheDir) { breathe++; if (breathe >= 12) breatheDir = false; }
+  // ── Breathing pulse for core radius ──
+  if (breatheDir) { breathe++; if (breathe >= 10) breatheDir = false; }
   else { breathe--; if (breathe <= 0) breatheDir = true; }
 
-  // ── HUD Targeting Brackets (corners) ──
-  int bLen = 10;
-  tft.drawFastHLine(4, faceTop, bLen, mainCol);
-  tft.drawFastVLine(4, faceTop, bLen, mainCol);
-  tft.drawFastHLine(SCREEN_W - 4 - bLen, faceTop, bLen, mainCol);
-  tft.drawFastVLine(SCREEN_W - 5, faceTop, bLen, mainCol);
-  tft.drawFastHLine(4, 94, bLen, mainCol);
-  tft.drawFastVLine(4, 94 - bLen, bLen, mainCol);
-  tft.drawFastHLine(SCREEN_W - 4 - bLen, 94, bLen, mainCol);
-  tft.drawFastVLine(SCREEN_W - 5, 94 - bLen, bLen, mainCol);
+  // ── HUD Corner Brackets ──
+  int bk = 8;
+  tft.drawFastHLine(4, 16, bk, mainCol);
+  tft.drawFastVLine(4, 16, bk, mainCol);
+  tft.drawFastHLine(SCREEN_W - 4 - bk, 16, bk, mainCol);
+  tft.drawFastVLine(SCREEN_W - 5, 16, bk, mainCol);
+  tft.drawFastHLine(4, 96, bk, mainCol);
+  tft.drawFastVLine(4, 96 - bk, bk, mainCol);
+  tft.drawFastHLine(SCREEN_W - 4 - bk, 96, bk, mainCol);
+  tft.drawFastVLine(SCREEN_W - 5, 96 - bk, bk, mainCol);
 
-  // ── Helmet Outline: angular visor shape ──
-  int headW = 88 + breathe / 3;
-  int hlx = cx - headW / 2;
-  int hrx = cx + headW / 2;
-  // Top dome arc (flat)
-  tft.drawFastHLine(hlx + 12, faceTop + 4, headW - 24, COL_DIM);
-  // Side slants
-  tft.drawLine(hlx + 12, faceTop + 4, hlx, faceTop + 26, COL_DIM);
-  tft.drawLine(hrx - 12, faceTop + 4, hrx, faceTop + 26, COL_DIM);
-  // Cheek lines
-  tft.drawFastVLine(hlx, faceTop + 26, 40, COL_DIM);
-  tft.drawFastVLine(hrx, faceTop + 26, 40, COL_DIM);
-  // Jawline converging
-  tft.drawLine(hlx, faceTop + 66, cx - 10, faceTop + 76, COL_DIM);
-  tft.drawLine(hrx, faceTop + 66, cx + 10, faceTop + 76, COL_DIM);
-  // Chin chevron
-  tft.drawLine(cx - 10, faceTop + 76, cx, faceTop + 80, mainCol);
-  tft.drawLine(cx + 10, faceTop + 76, cx, faceTop + 80, mainCol);
+  // ── Outer ring (dim structural ring) ──
+  tft.drawCircle(cx, cy, 34, COL_DIM);
 
-  // ── Brow Line ──
-  int browY = faceTop + 22;
-  tft.drawLine(hlx + 6, browY, cx - 4, browY - 4, mainCol);
-  tft.drawLine(cx + 4, browY - 4, hrx - 6, browY, mainCol);
+  // ── Middle ring (main color, pulsing) ──
+  int midR = 28 + breathe / 5;
+  tft.drawCircle(cx, cy, midR, mainCol);
 
-  // ── Eyes ──
-  bool blink = (millis() % 5000 < 120);
-  int eyeW = 22, eyeH = 10;
-  int eyeY = faceTop + 30;
-  int pupilShift = 0;
-  if (currentJarvisState == STATE_THINKING) {
-    pupilShift = (int)(sin(millis() / 200.0) * 5);
+  // ── Inner ring ──
+  tft.drawCircle(cx, cy, 18, COL_BORDER);
+
+  // ── Rotating triangular reactor segments (3 segments at 120° apart) ──
+  for (int seg = 0; seg < 3; seg++) {
+    float segAngle = radians(angle + seg * 120);
+    float segAngle2 = radians(angle + seg * 120 + 30);
+    
+    int x1 = cx + cos(segAngle) * 20;
+    int y1 = cy + sin(segAngle) * 20;
+    int x2 = cx + cos(segAngle2) * 20;
+    int y2 = cy + sin(segAngle2) * 20;
+    int x3 = cx + cos(radians(angle + seg * 120 + 15)) * 32;
+    int y3 = cy + sin(radians(angle + seg * 120 + 15)) * 32;
+    
+    tft.drawLine(x1, y1, x3, y3, mainCol);
+    tft.drawLine(x2, y2, x3, y3, mainCol);
+    tft.drawLine(x1, y1, x2, y2, COL_DIM);
   }
-  drawVisorEye(cx - 32, eyeY, eyeW, eyeH, mainCol, blink, pupilShift);
-  drawVisorEye(cx + 10, eyeY, eyeW, eyeH, mainCol, blink, pupilShift);
-  // Nose bridge line
-  tft.drawFastVLine(cx, eyeY + 2, eyeH - 2, COL_DIM);
 
-  // ── Mouth / Vocal Region ──
-  int mouthY = faceTop + 56;
+  // ── 6 Rotating orbital energy dots on outer ring ──
+  for (int d = 0; d < 6; d++) {
+    float dotAngle = radians(angle * 2 + d * 60);
+    int dx = cx + cos(dotAngle) * 34;
+    int dy = cy + sin(dotAngle) * 34;
+    tft.fillCircle(dx, dy, 2, accentCol);
+    tft.drawPixel(dx, dy, COL_WHITE);
+  }
+
+  // ── Core center ──
+  int coreR = 6 + breathe / 4;
+  tft.fillCircle(cx, cy, coreR, mainCol);
+  tft.fillCircle(cx, cy, coreR - 2, COL_WHITE);
+  tft.drawCircle(cx, cy, coreR + 1, accentCol);
+
+  // ── Speaking mode: equalizer bars around the reactor ──
   if (currentJarvisState == STATE_SPEAKING) {
-    // Equalizer bars synced to waveform
-    int barW = 6;
-    int startX = cx - 28;
     for (int i = 0; i < 8; i++) {
-      int h = audioWaveform[i] % 14;
-      if (h < 2) h = 2;
-      tft.fillRect(startX + i * (barW + 1), mouthY + 10 - h, barW, h, mainCol);
-      tft.drawPixel(startX + i * (barW + 1) + barW/2, mouthY + 10 - h, COL_WHITE);
+      float barAngle = radians(i * 45 + angle);
+      int bh = audioWaveform[i] % 12;
+      if (bh < 3) bh = 3;
+      int bx1 = cx + cos(barAngle) * 36;
+      int by1 = cy + sin(barAngle) * 36;
+      int bx2 = cx + cos(barAngle) * (36 + bh);
+      int by2 = cy + sin(barAngle) * (36 + bh);
+      tft.drawLine(bx1, by1, bx2, by2, COL_MAGENTA);
+      tft.fillCircle(bx2, by2, 1, COL_WHITE);
     }
-  } else if (currentJarvisState == STATE_THINKING) {
-    // Scanning sweep dot
-    int dotX = cx - 20 + ((millis() / 4) % 40);
-    tft.drawFastHLine(cx - 20, mouthY + 4, 40, COL_DIM);
-    tft.fillCircle(dotX, mouthY + 4, 2, COL_WARN);
-  } else {
-    // Calm horizontal mouth segments
-    tft.drawFastHLine(cx - 18, mouthY + 2, 14, mainCol);
-    tft.drawFastHLine(cx + 4, mouthY + 2, 14, mainCol);
-    tft.drawPixel(cx - 2, mouthY + 2, COL_DIM);
-    tft.drawPixel(cx + 2, mouthY + 2, COL_DIM);
   }
 
-  // ── Horizontal Scan Sweep ──
-  scanLineY++;
-  if (scanLineY > 78) scanLineY = 0;
-  int slY = faceTop + 2 + scanLineY;
-  tft.drawFastHLine(8, slY, SCREEN_W - 16, COL_PANEL);
+  // ── Thinking mode: scanning orbit particle ──
+  if (currentJarvisState == STATE_THINKING) {
+    float scanAngle = radians((millis() / 3) % 360);
+    int sx = cx + cos(scanAngle) * 26;
+    int sy = cy + sin(scanAngle) * 26;
+    tft.fillCircle(sx, sy, 3, COL_WARN);
+    tft.drawCircle(sx, sy, 5, COL_DIM);
+  }
 
-  // ── Bottom HUD Data Readout ──
-  int hudY = 96;
+  // ── Bottom HUD Data Strip ──
+  int hudY = 98;
   tft.drawFastHLine(4, hudY, SCREEN_W - 8, COL_BORDER);
   hudY += 3;
   tft.setTextSize(1);
 
-  // State label
+  // State label (left)
   tft.setTextColor(mainCol, COL_BG);
   tft.setCursor(4, hudY);
   tft.print(stateLabel);
 
-  // Uptime readout
+  // Uptime (right)
   unsigned long secs = millis() / 1000;
   char upBuf[8];
   snprintf(upBuf, sizeof(upBuf), "%02lu:%02lu", secs / 60, secs % 60);
   tft.setTextColor(COL_GRAY, COL_BG);
   tft.setCursor(SCREEN_W - 34, hudY);
   tft.print(upBuf);
-  hudY += 10;
+  hudY += 11;
 
-  // Response text
-  printWrappedText(jarvisText, 4, hudY, 5, COL_WHITE);
+  // Response text area
+  printWrappedText(jarvisText, 4, hudY, 4, COL_WHITE);
 }
 
 void renderBleConsole() {
