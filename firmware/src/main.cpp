@@ -47,6 +47,9 @@ int audioWaveform[8] = {10, 25, 40, 15, 30, 20, 35, 10};
 int rssiVal = -100;
 String localIPStr = "0.0.0.0";
 unsigned long lastRefreshMs = 0;
+int scanLineY = 0;  // horizontal scan sweep position
+int breathe = 0;    // breathing glow counter
+bool breatheDir = true;
 
 // Button State
 uint8_t btnLeftPrev = HIGH;
@@ -186,45 +189,80 @@ void drawPageDots() {
 
 void renderDashboard() {
   int y = 18;
+  // Section title with decorative bracket
   tft.setTextColor(COL_CYAN, COL_BG);
-  tft.setCursor(6, y); tft.print("SYSTEM STATUS");
-  tft.drawFastHLine(6, y + 10, SCREEN_W - 12, COL_DIM);
+  tft.setCursor(6, y); tft.print("[ SYSTEM OVERVIEW ]");
+  tft.drawFastHLine(4, y + 10, SCREEN_W - 8, COL_BORDER);
   y += 16;
 
-  // Local simulated computer metrics or Wi-Fi info
+  // CPU bar
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("CPU");
+  int cpuVal = 35 + (millis() / 300) % 25;
+  tft.fillRect(28, y + 1, 68, 5, COL_BAR_BG);
+  tft.fillRect(28, y + 1, map(cpuVal, 0, 100, 0, 68), 5, COL_NEON);
   tft.setTextColor(COL_WHITE, COL_BG);
-  tft.setCursor(8, y); tft.print("CPU:");
-  tft.fillRect(36, y + 1, 55, 6, COL_BAR_BG);
-  tft.fillRect(36, y + 1, 24, 6, COL_NEON);
-  tft.setCursor(96, y); tft.print("42%");
+  tft.setCursor(100, y); tft.print(String(cpuVal) + "%");
+  y += 12;
+
+  // RAM bar (live ESP heap)
+  uint32_t heapFree = ESP.getFreeHeap() / 1024;
+  uint32_t heapTotal = 320; // KB
+  int ramPct = 100 - (heapFree * 100 / heapTotal);
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("RAM");
+  tft.fillRect(28, y + 1, 68, 5, COL_BAR_BG);
+  tft.fillRect(28, y + 1, map(ramPct, 0, 100, 0, 68), 5, COL_CYAN);
+  tft.setTextColor(COL_WHITE, COL_BG);
+  tft.setCursor(100, y); tft.print(String(ramPct) + "%");
+  y += 12;
+
+  // Signal bar
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("SIG");
+  int sigPct = map(constrain(rssiVal, -100, -40), -100, -40, 0, 100);
+  tft.fillRect(28, y + 1, 68, 5, COL_BAR_BG);
+  uint16_t sigCol = sigPct > 50 ? COL_NEON : (sigPct > 25 ? COL_WARN : COL_CRIT);
+  tft.fillRect(28, y + 1, map(sigPct, 0, 100, 0, 68), 5, sigCol);
+  tft.setTextColor(COL_WHITE, COL_BG);
+  tft.setCursor(100, y); tft.print(String(sigPct) + "%");
   y += 14;
 
-  tft.setCursor(8, y); tft.print("RAM:");
-  tft.fillRect(36, y + 1, 55, 6, COL_BAR_BG);
-  tft.fillRect(36, y + 1, 38, 6, COL_CYAN);
-  tft.setCursor(96, y); tft.print("68%");
-  y += 14;
-
-  tft.setCursor(8, y); tft.print("NET:");
-  tft.setTextColor(wifiConnected ? COL_NEON : COL_CRIT, COL_BG);
-  tft.setCursor(36, y); tft.print(wifiConnected ? "CONNECTED" : "OFFLINE");
-  y += 16;
-
-  tft.drawFastHLine(6, y, SCREEN_W - 12, COL_DIM);
+  tft.drawFastHLine(4, y, SCREEN_W - 8, COL_BORDER);
   y += 6;
 
+  // Network status block
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("LOCAL GATEWAY IP:");
-  y += 10;
-  tft.setTextColor(COL_WHITE, COL_BG);
-  tft.setCursor(8, y); tft.print(localIPStr);
-  y += 14;
+  tft.setCursor(4, y); tft.print("NETWORK:");
+  tft.setTextColor(wifiConnected ? COL_NEON : COL_CRIT, COL_BG);
+  tft.setCursor(56, y); tft.print(wifiConnected ? "LINKED" : "DOWN");
+  y += 11;
 
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("BLE HOST LINK:");
-  y += 10;
+  tft.setCursor(4, y); tft.print("IP:");
+  tft.setTextColor(COL_WHITE, COL_BG);
+  tft.setCursor(22, y); tft.print(localIPStr);
+  y += 11;
+
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("BLE:");
   tft.setTextColor(bleConnected ? COL_CYAN : COL_DIM, COL_BG);
-  tft.setCursor(8, y); tft.print(bleConnected ? "PHONE ACTIVE" : "BROADCASTING");
+  tft.setCursor(28, y); tft.print(bleConnected ? "PAIRED" : "ADVERT");
+  y += 11;
+
+  // Live uptime
+  unsigned long secs = millis() / 1000;
+  int m = secs / 60; int s = secs % 60;
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("UP:");
+  tft.setTextColor(COL_CYAN, COL_BG);
+  char uptimeBuf[12];
+  snprintf(uptimeBuf, sizeof(uptimeBuf), "%02d:%02d", m, s);
+  tft.setCursor(22, y); tft.print(uptimeBuf);
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(58, y); tft.print("HEAP:");
+  tft.setTextColor(COL_NEON, COL_BG);
+  tft.setCursor(88, y); tft.print(String(heapFree) + "K");
 }
 
 void renderWifiStats() {
@@ -262,84 +300,164 @@ void renderWifiStats() {
   tft.setCursor(76, y); tft.print("14 ms");
 }
 
+// ── Mature Iron Man Visor Face ─────────────────────────────────
+
+void drawVisorEye(int x, int y, int w, int h, uint16_t col, bool blink, int pupilShift) {
+  if (blink) {
+    // Blink: narrow slit
+    tft.drawFastHLine(x, y + h/2, w, col);
+    tft.drawFastHLine(x, y + h/2 - 1, w, COL_DIM);
+    return;
+  }
+  // Angular trapezoidal eye shape
+  tft.drawLine(x + 3, y, x + w - 1, y, col);           // top edge
+  tft.drawLine(x, y + h, x + w - 4, y + h, col);       // bottom edge
+  tft.drawLine(x + 3, y, x, y + h, col);                // left slant
+  tft.drawLine(x + w - 1, y, x + w - 4, y + h, col);   // right slant
+
+  // Inner glow fill
+  for (int row = 1; row < h; row++) {
+    float t = (float)row / h;
+    int lx = x + 3 - (int)(3 * t);
+    int rx = x + w - 1 - (int)(3 * t);
+    tft.drawFastHLine(lx + 1, y + row, rx - lx - 1, COL_BAR_BG);
+  }
+
+  // Pupil: bright dot that can shift
+  int px = x + w/2 + pupilShift;
+  int py = y + h/2;
+  tft.fillRect(px - 2, py - 1, 4, 3, COL_WHITE);
+  tft.drawPixel(px, py, col);
+  
+  // Crosshair in eye
+  tft.drawFastHLine(x + 2, py, 3, COL_DIM);
+  tft.drawFastHLine(px + 3, py, 3, COL_DIM);
+}
+
 void renderJarvisCore() {
-  // Clear the AI Core graphics face area to draw the next frame
-  tft.fillRect(4, 18, SCREEN_W - 8, 82, COL_BG);
+  // Clear face area
+  tft.fillRect(0, 13, SCREEN_W, SCREEN_H - 25, COL_BG);
 
   int cx = SCREEN_W / 2;
-  int cy = 58;
+  int faceTop = 20;
 
-  // Let's implement active blinking eyes
-  bool blink = (millis() % 4000 < 150); // blinks for 150ms every 4 seconds
+  // ── Pick color theme by state ──
+  uint16_t mainCol = COL_CYAN;
+  uint16_t accentCol = COL_NEON;
+  const char* stateLabel = "STANDBY";
+  if (currentJarvisState == STATE_THINKING) {
+    mainCol = COL_WARN; accentCol = COL_WHITE; stateLabel = "ANALYZING";
+  } else if (currentJarvisState == STATE_SPEAKING) {
+    mainCol = COL_MAGENTA; accentCol = COL_CYAN; stateLabel = "SPEAKING";
+  } else if (currentJarvisState == STATE_CONNECTING) {
+    mainCol = COL_CRIT; accentCol = COL_WARN; stateLabel = "LINKING";
+  }
 
-  if (currentJarvisState == STATE_IDLE) {
-    // ── IDLE STATE: Smiling Cybernetic AI Face ──
-    uint16_t eyeCol = COL_CYAN;
-    
-    // Eyes: Draw circular eyes or lines if blinking
-    if (blink) {
-      tft.drawFastHLine(cx - 24, cy, 12, eyeCol);
-      tft.drawFastHLine(cx + 12, cy, 12, eyeCol);
-    } else {
-      tft.fillCircle(cx - 18, cy, 7, eyeCol);
-      tft.fillCircle(cx - 18, cy, 2, COL_WHITE); // highlight
-      tft.fillCircle(cx + 18, cy, 7, eyeCol);
-      tft.fillCircle(cx + 18, cy, 2, COL_WHITE); // highlight
+  // ── Breathing glow animation ──
+  if (breatheDir) { breathe++; if (breathe >= 12) breatheDir = false; }
+  else { breathe--; if (breathe <= 0) breatheDir = true; }
+
+  // ── HUD Targeting Brackets (corners) ──
+  int bLen = 10;
+  tft.drawFastHLine(4, faceTop, bLen, mainCol);
+  tft.drawFastVLine(4, faceTop, bLen, mainCol);
+  tft.drawFastHLine(SCREEN_W - 4 - bLen, faceTop, bLen, mainCol);
+  tft.drawFastVLine(SCREEN_W - 5, faceTop, bLen, mainCol);
+  tft.drawFastHLine(4, 94, bLen, mainCol);
+  tft.drawFastVLine(4, 94 - bLen, bLen, mainCol);
+  tft.drawFastHLine(SCREEN_W - 4 - bLen, 94, bLen, mainCol);
+  tft.drawFastVLine(SCREEN_W - 5, 94 - bLen, bLen, mainCol);
+
+  // ── Helmet Outline: angular visor shape ──
+  int headW = 88 + breathe / 3;
+  int hlx = cx - headW / 2;
+  int hrx = cx + headW / 2;
+  // Top dome arc (flat)
+  tft.drawFastHLine(hlx + 12, faceTop + 4, headW - 24, COL_DIM);
+  // Side slants
+  tft.drawLine(hlx + 12, faceTop + 4, hlx, faceTop + 26, COL_DIM);
+  tft.drawLine(hrx - 12, faceTop + 4, hrx, faceTop + 26, COL_DIM);
+  // Cheek lines
+  tft.drawFastVLine(hlx, faceTop + 26, 40, COL_DIM);
+  tft.drawFastVLine(hrx, faceTop + 26, 40, COL_DIM);
+  // Jawline converging
+  tft.drawLine(hlx, faceTop + 66, cx - 10, faceTop + 76, COL_DIM);
+  tft.drawLine(hrx, faceTop + 66, cx + 10, faceTop + 76, COL_DIM);
+  // Chin chevron
+  tft.drawLine(cx - 10, faceTop + 76, cx, faceTop + 80, mainCol);
+  tft.drawLine(cx + 10, faceTop + 76, cx, faceTop + 80, mainCol);
+
+  // ── Brow Line ──
+  int browY = faceTop + 22;
+  tft.drawLine(hlx + 6, browY, cx - 4, browY - 4, mainCol);
+  tft.drawLine(cx + 4, browY - 4, hrx - 6, browY, mainCol);
+
+  // ── Eyes ──
+  bool blink = (millis() % 5000 < 120);
+  int eyeW = 22, eyeH = 10;
+  int eyeY = faceTop + 30;
+  int pupilShift = 0;
+  if (currentJarvisState == STATE_THINKING) {
+    pupilShift = (int)(sin(millis() / 200.0) * 5);
+  }
+  drawVisorEye(cx - 32, eyeY, eyeW, eyeH, mainCol, blink, pupilShift);
+  drawVisorEye(cx + 10, eyeY, eyeW, eyeH, mainCol, blink, pupilShift);
+  // Nose bridge line
+  tft.drawFastVLine(cx, eyeY + 2, eyeH - 2, COL_DIM);
+
+  // ── Mouth / Vocal Region ──
+  int mouthY = faceTop + 56;
+  if (currentJarvisState == STATE_SPEAKING) {
+    // Equalizer bars synced to waveform
+    int barW = 6;
+    int startX = cx - 28;
+    for (int i = 0; i < 8; i++) {
+      int h = audioWaveform[i] % 14;
+      if (h < 2) h = 2;
+      tft.fillRect(startX + i * (barW + 1), mouthY + 10 - h, barW, h, mainCol);
+      tft.drawPixel(startX + i * (barW + 1) + barW/2, mouthY + 10 - h, COL_WHITE);
     }
-    
-    // Mouth: Calm line
-    tft.drawFastHLine(cx - 15, cy + 18, 30, COL_NEON);
-  }
-  else if (currentJarvisState == STATE_THINKING) {
-    // ── THINKING STATE: Alert Eyes Shifting + Swirling Arc ──
-    uint16_t eyeCol = COL_WARN;
-    int shift = sin(millis() / 150.0) * 4;
-    
-    tft.fillCircle(cx - 18 + shift, cy, 5, eyeCol);
-    tft.fillCircle(cx + 18 + shift, cy, 5, eyeCol);
-    
-    // Swirling thinking arc around mouth
-    int mouthAngle = (millis() / 2) % 360;
-    float rad = radians(mouthAngle);
-    int mx = cx + cos(rad) * 12;
-    int my = cy + 18 + sin(rad) * 4;
-    tft.fillCircle(mx, my, 2, COL_WARN);
-    tft.drawCircle(cx, cy + 18, 8, COL_DIM);
-  }
-  else if (currentJarvisState == STATE_SPEAKING) {
-    // ── SPEAKING STATE: Glowing Pulsing Core + Synchronized Vocal Mouth ──
-    uint16_t eyeCol = COL_MAGENTA;
-    int eyePulse = sin(millis() / 80.0) * 2 + 7;
-    
-    tft.fillCircle(cx - 18, cy, eyePulse, eyeCol);
-    tft.fillCircle(cx + 18, cy, eyePulse, eyeCol);
-
-    // Mouth Lip sync height mapped directly to incoming real-time audio waveform!
-    int h = audioWaveform[4] % 16;
-    if (h < 2) h = 2;
-    tft.fillRect(cx - 15, cy + 18 - h/2, 30, h, COL_NEON);
-    tft.drawRect(cx - 15, cy + 18 - h/2, 30, h, COL_CYAN);
-  }
-  else {
-    // ── LISTENING STATE: Large Glowing Cyan Eyes ──
-    uint16_t eyeCol = COL_MAGENTA;
-    int size = sin(millis() / 120.0) * 2 + 9;
-    
-    tft.fillCircle(cx - 18, cy, size, eyeCol);
-    tft.fillCircle(cx + 18, cy, size, eyeCol);
-    
-    // Smiling curved mouth
-    tft.drawPixel(cx - 16, cy + 16, COL_CYAN);
-    tft.drawPixel(cx + 16, cy + 16, COL_CYAN);
-    tft.drawFastHLine(cx - 15, cy + 18, 30, COL_CYAN);
-    tft.drawPixel(cx - 10, cy + 19, COL_CYAN);
-    tft.drawPixel(cx + 10, cy + 19, COL_CYAN);
-    tft.drawFastHLine(cx - 9, cy + 20, 18, COL_CYAN);
+  } else if (currentJarvisState == STATE_THINKING) {
+    // Scanning sweep dot
+    int dotX = cx - 20 + ((millis() / 4) % 40);
+    tft.drawFastHLine(cx - 20, mouthY + 4, 40, COL_DIM);
+    tft.fillCircle(dotX, mouthY + 4, 2, COL_WARN);
+  } else {
+    // Calm horizontal mouth segments
+    tft.drawFastHLine(cx - 18, mouthY + 2, 14, mainCol);
+    tft.drawFastHLine(cx + 4, mouthY + 2, 14, mainCol);
+    tft.drawPixel(cx - 2, mouthY + 2, COL_DIM);
+    tft.drawPixel(cx + 2, mouthY + 2, COL_DIM);
   }
 
-  // Draw scrolling subtitle text block at the bottom
-  tft.drawFastHLine(6, 102, SCREEN_W - 12, COL_DIM);
-  printWrappedText(jarvisText, 6, 110, 4, COL_WHITE);
+  // ── Horizontal Scan Sweep ──
+  scanLineY++;
+  if (scanLineY > 78) scanLineY = 0;
+  int slY = faceTop + 2 + scanLineY;
+  tft.drawFastHLine(8, slY, SCREEN_W - 16, COL_PANEL);
+
+  // ── Bottom HUD Data Readout ──
+  int hudY = 96;
+  tft.drawFastHLine(4, hudY, SCREEN_W - 8, COL_BORDER);
+  hudY += 3;
+  tft.setTextSize(1);
+
+  // State label
+  tft.setTextColor(mainCol, COL_BG);
+  tft.setCursor(4, hudY);
+  tft.print(stateLabel);
+
+  // Uptime readout
+  unsigned long secs = millis() / 1000;
+  char upBuf[8];
+  snprintf(upBuf, sizeof(upBuf), "%02lu:%02lu", secs / 60, secs % 60);
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(SCREEN_W - 34, hudY);
+  tft.print(upBuf);
+  hudY += 10;
+
+  // Response text
+  printWrappedText(jarvisText, 4, hudY, 5, COL_WHITE);
 }
 
 void renderBleConsole() {
@@ -554,7 +672,7 @@ void setup() {
   tft.setTextWrap(false);
 
   // Welcome Loader
-  drawHeader("JARVIS CORE v2.0", COL_CYAN);
+  drawHeader("JARVIS MK-III", COL_CYAN);
   tft.setTextSize(1);
   tft.setTextColor(COL_CYAN, COL_BG);
   tft.setCursor(14, 50);

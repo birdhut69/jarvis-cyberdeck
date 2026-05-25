@@ -362,14 +362,32 @@ export default function JarvisDashboard() {
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     const voices = synthRef.current.getVoices();
     
-    // Choose a high-quality local English voice
-    const naturalVoice = voices.find(voice => voice.lang.includes('en-GB') || voice.lang.includes('en-US'));
-    if (naturalVoice) utterance.voice = naturalVoice;
-    
-    utterance.rate = 1.02;
-    utterance.pitch = 1.0;
+    // Aggressively seek a DEEP MALE voice for commanding JARVIS persona
+    // Priority: Daniel (British Male) > Aaron > Google UK Male > any en-GB male > any en male
+    const maleVoicePatterns = [
+      v => v.name.includes('Daniel'),          // macOS British Male – deep & authoritative
+      v => v.name.includes('Aaron'),            // macOS US Male – smooth & clear  
+      v => v.name.includes('Arthur'),           // macOS UK Male
+      v => v.name.includes('James'),            // Some systems
+      v => v.name.includes('Google UK English Male'),
+      v => v.name.includes('Male') && v.lang.includes('en-GB'),
+      v => v.name.includes('Male') && v.lang.includes('en'),
+      v => v.lang.includes('en-GB'),            // British accent fallback
+      v => v.lang.includes('en-US'),            // American fallback
+    ];
 
-    // Spec array stream to ESP32
+    let selectedVoice = null;
+    for (const pattern of maleVoicePatterns) {
+      selectedVoice = voices.find(pattern);
+      if (selectedVoice) break;
+    }
+    if (selectedVoice) utterance.voice = selectedVoice;
+    
+    // Deep, authoritative male cadence
+    utterance.rate = 0.95;    // Slightly slower – commanding
+    utterance.pitch = 0.85;   // Lower pitch – deep male tone
+
+    // Stream waveform data to ESP32 display during speech
     const interval = setInterval(() => {
       if (synthRef.current.speaking) {
         const dummyWave = Array.from({ length: 8 }, () => Math.floor(Math.random() * 32) + 8);
