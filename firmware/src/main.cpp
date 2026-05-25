@@ -268,36 +268,77 @@ void renderDashboard() {
 void renderWifiStats() {
   int y = 18;
   tft.setTextColor(COL_NEON, COL_BG);
-  tft.setCursor(6, y); tft.print("WI-FI TELEMETRY");
-  tft.drawFastHLine(6, y + 10, SCREEN_W - 12, COL_DIM);
+  tft.setCursor(6, y); tft.print("[ WI-FI TELEMETRY ]");
+  tft.drawFastHLine(4, y + 10, SCREEN_W - 8, COL_BORDER);
   y += 16;
 
+  // SSID
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("SSID:");
+  tft.setCursor(4, y); tft.print("SSID:");
   tft.setTextColor(COL_WHITE, COL_BG);
-  tft.setCursor(44, y); tft.print(WiFi.SSID().length() > 0 ? WiFi.SSID() : "Airtel_JADHAV");
-  y += 14;
+  tft.setCursor(36, y);
+  tft.print(WiFi.SSID().length() > 0 ? WiFi.SSID() : "Airtel_JADHAV");
+  y += 11;
 
+  // Signal strength bar
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("SIGNAL:");
+  tft.setCursor(4, y); tft.print("RSSI:");
   tft.setTextColor(COL_NEON, COL_BG);
-  tft.setCursor(54, y); tft.print(String(rssiVal) + " dBm");
+  tft.setCursor(36, y); tft.print(String(rssiVal) + "dBm");
   y += 10;
-  tft.fillRect(8, y + 4, 112, 6, COL_BAR_BG);
-  int signalPercent = map(constrain(rssiVal, -100, -40), -100, -40, 5, 112);
-  tft.fillRect(8, y + 4, signalPercent, 6, COL_NEON);
-  y += 18;
+  int sigPct = map(constrain(rssiVal, -100, -40), -100, -40, 0, 112);
+  tft.fillRect(4, y + 2, 120, 4, COL_BAR_BG);
+  uint16_t barCol = sigPct > 60 ? COL_NEON : (sigPct > 30 ? COL_WARN : COL_CRIT);
+  tft.fillRect(4, y + 2, sigPct, 4, barCol);
+  y += 10;
 
+  // IP Address
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("IP ADDRESS:");
+  tft.setCursor(4, y); tft.print("IP:");
   tft.setTextColor(COL_WHITE, COL_BG);
-  tft.setCursor(8, y + 10); tft.print(localIPStr);
-  y += 24;
+  tft.setCursor(22, y); tft.print(localIPStr);
+  y += 11;
 
+  // Gateway
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("PING SPEED:");
+  tft.setCursor(4, y); tft.print("GW:");
+  tft.setTextColor(COL_DIM, COL_BG);
+  tft.setCursor(22, y);
+  if (WiFi.gatewayIP()) tft.print(WiFi.gatewayIP().toString());
+  else tft.print("--");
+  y += 11;
+
+  // MAC Address
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("MAC:");
+  tft.setTextColor(COL_DIM, COL_BG);
+  tft.setCursor(28, y); tft.print(WiFi.macAddress().substring(0, 14));
+  y += 11;
+
+  // Channel
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("CH:");
   tft.setTextColor(COL_CYAN, COL_BG);
-  tft.setCursor(76, y); tft.print("14 ms");
+  tft.setCursor(22, y); tft.print(String(WiFi.channel()));
+
+  // TX Power
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(46, y); tft.print("TX:");
+  tft.setTextColor(COL_CYAN, COL_BG);
+  tft.setCursor(64, y); tft.print("20dBm");
+  y += 12;
+
+  tft.drawFastHLine(4, y, SCREEN_W - 8, COL_BORDER);
+  y += 5;
+
+  // Connection uptime
+  unsigned long secs = millis() / 1000;
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("UPTIME:");
+  tft.setTextColor(COL_NEON, COL_BG);
+  char buf[12];
+  snprintf(buf, sizeof(buf), "%lum %lus", secs / 60, secs % 60);
+  tft.setCursor(48, y); tft.print(buf);
 }
 
 // ── Arc Reactor Core Engine ───────────────────────────────────
@@ -433,29 +474,52 @@ void renderJarvisCore() {
 void renderBleConsole() {
   int y = 18;
   tft.setTextColor(COL_CYAN, COL_BG);
-  tft.setCursor(6, y); tft.print("WEB BLE REMOTE");
-  tft.drawFastHLine(6, y + 10, SCREEN_W - 12, COL_DIM);
+  tft.setCursor(6, y); tft.print("[ BLE TERMINAL ]");
+  tft.drawFastHLine(4, y + 10, SCREEN_W - 8, COL_BORDER);
   y += 16;
 
+  // Device name
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("DEVICE NAME:");
+  tft.setCursor(4, y); tft.print("NAME:");
   tft.setTextColor(COL_WHITE, COL_BG);
-  tft.setCursor(8, y + 10); tft.print("ICYWALL JARVIS");
-  y += 24;
+  tft.setCursor(36, y); tft.print("ICYWALL JARVIS");
+  y += 11;
 
+  // Status
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("BLE STATUS:");
+  tft.setCursor(4, y); tft.print("LINK:");
   tft.setTextColor(bleConnected ? COL_NEON : COL_WARN, COL_BG);
-  tft.setCursor(8, y + 10); tft.print(bleConnected ? "CONNECTED LOCAL" : "ADVERTISING...");
-  y += 24;
+  tft.setCursor(36, y); tft.print(bleConnected ? "ACTIVE" : "SCANNING");
+  y += 11;
 
-  tft.drawFastHLine(6, y, SCREEN_W - 12, COL_DIM);
-  y += 6;
-
+  // Service UUID (shortened)
   tft.setTextColor(COL_GRAY, COL_BG);
-  tft.setCursor(8, y); tft.print("LAST INCOMING PACKET:");
+  tft.setCursor(4, y); tft.print("SVC:");
+  tft.setTextColor(COL_DIM, COL_BG);
+  tft.setCursor(28, y); tft.print("6E40..DCCA9E");
+  y += 11;
+
+  // MTU / Protocol
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("MTU:");
+  tft.setTextColor(COL_CYAN, COL_BG);
+  tft.setCursor(28, y); tft.print("256");
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(56, y); tft.print("PROTO:");
+  tft.setTextColor(COL_CYAN, COL_BG);
+  tft.setCursor(92, y); tft.print("NimBLE");
   y += 12;
-  printWrappedText(bleConsoleLog, 8, y, 4, COL_CYAN);
+
+  tft.drawFastHLine(4, y, SCREEN_W - 8, COL_BORDER);
+  y += 5;
+
+  // Packet log area
+  tft.setTextColor(COL_GRAY, COL_BG);
+  tft.setCursor(4, y); tft.print("LAST RX PACKET:");
+  y += 10;
+  // Draw a mini terminal frame
+  tft.drawRect(3, y, SCREEN_W - 6, 40, COL_DIM);
+  printWrappedText(bleConsoleLog, 6, y + 3, 3, COL_CYAN);
 }
 
 void renderPage() {
