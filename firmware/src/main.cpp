@@ -404,6 +404,8 @@ void parseJsonCommand(const char* jsonStr) {
     for (int i = 0; i < 8; i++) {
       audioWaveform[i] = arr[i] | 10;
     }
+  }
+
   // 3.5 Check for Page state sync
   if (doc.containsKey("page")) {
     int p = doc["page"];
